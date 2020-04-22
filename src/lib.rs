@@ -26,6 +26,9 @@ enum Msg {
     Nothing,
 }
 
+// dev: wasm-pack build --target web --out-name package --dev
+// run server: cargo make serve
+
 fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
     match msg {
         Msg::Tree(tree::Msg::GRequestUpdate(msg)) => {
