@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <meta name="description" content="">
+
+    <link href="//fonts.googleapis.com/css?family=Raleway:400,300,600" rel="stylesheet" type="text/css">
+
+    <link rel="stylesheet" href="https://unpkg.com/98.css" />
+    <!-- <link rel="stylesheet" href="public/css/normalize.css"> -->
+    <!-- <link rel="stylesheet" href="public/css/skeleton.css"> -->
+
+    <link rel="icon" type="image/png" href="/public/favicon.png">
+
+    <title>A Title</title>
+
+    </head>
+
+    <body>
+        <div class="window" style="margin: 32px; width: 900px">
+          <div class="title-bar">
+            <div class="title-bar-text">
+              Holter wasm app
+            </div>
+          </div>
+          <div id="app" class="window-body">
+          </div>
+        </div>
+        <script type="module">
+            // https://rustwasm.github.io/docs/wasm-bindgen/examples/without-a-bundler.html
+            import init from '/pkg/package.js';
+            init('/pkg/package_bg.wasm');
+        </script>
+        <script>
+            function js_debug(v) {
+                console.log(v);
+            }
+
+            class HolterDevice {
+                constructor(device) {
+                    console.log(device);
+                    this.device_ = device;
+                }
+
+                connect() {
+                    return this.device_.open()
+                        .then(() => {
+                          if (this.device_.configuration === null) {
+                            return this.device_.selectConfiguration(1);
+                          }
+                        })
+                        .then(() => this.device_.claimInterface(0));
+                }
+
+                send_cmd(data) {
+                    const { endpointNumber } = this.device_.configuration.interfaces[0].alternate.endpoints[1];
+                    return this.device_.transferOut(endpointNumber, data);
+                }
+
+                recv_cmd() {
+                    const { endpointNumber } = this.device_.configuration.interfaces[0].alternate.endpoints[0];
+                    return this.device_.transferIn(endpointNumber, 64);
+                }
+
+                get number() {
+                    return this._number;
+                }
+
+                set number(n) {
+                    return this._number = n;
+                }
+
+                descriptor() {
+                    return {
+                        productName: this.device_.productName,
+                        serialNumber: this.device_.serialNumber,
+                        manufacturerName: this.device_.manufacturerName,
+                    };
+                }
+            }
+
+            function resolveAfter2Seconds(x) { 
+              return new Promise(resolve => {
+                setTimeout(() => {
+                  resolve(x);
+                }, 2000);
+              });
+            }
+
+            async function f1() {
+              var x = await resolveAfter2Seconds(10);
+              console.log(x); // 10
+              console.log('test'); // 10
+              return 42;
+            }
+
+            function requestDevice() {
+              const filters = [
+                { 'vendorId': 0x0483, 'productId': 0x7503 },
+              ];
+              return navigator.usb.requestDevice({ 'filters': filters }).then(
+                  device => { 
+                      //console.log(device);
+                      ////return {quack: "test"};
+                      //const arr = new Uint8Array(3);
+                      //arr.set([1,2,3]);
+                      //return arr;
+                      return new HolterDevice(device);
+                  }
+              )
+            }
+
+        </script>
+    </body>
+</html>
