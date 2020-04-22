@@ -21,7 +21,7 @@ serde = { version = "^1.0.85", features = ['derive'] }
 serde_json = "1.0"
 futures = "^0.3.4"
 gloo-timers = { version = "0.2.0", features = ["futures"] }
-ellocopo2 = { path = "../ellocopo2/ellocopo2" , features = ["std"]}
+ellocopo2 = { git = "https://github.com/openbuttnakedgang/ellocopo2.git" , features = ["std"]}
 syn = { version = "1.0", features = ["full", "extra-traits", "derive"] }
 proc-macro2 = "1.0"
 
