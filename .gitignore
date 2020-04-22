@@ -5,5 +5,4 @@ Cargo.lock
 # Pycharm
 /.idea
 
-/pkg
 wasm-pack.log
