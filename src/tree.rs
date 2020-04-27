@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::convert::TryInto;
 
 use seed::{*, prelude::*};
 use serde_json::Value as JsonValue;
@@ -12,6 +13,8 @@ use ellocopo2::owned::{Msg as ProtoMsg, Value};
 use ellocopo2::TypeTag;
 use ellocopo2::RequestCode;
 use ellocopo2::AnswerCode;
+
+use holter_support::error::Error as HolterError;
 
 mod parse;
 
@@ -55,9 +58,9 @@ pub fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
             let TLeaf{ty, view: ViewLeaf{input_val, ..}, ..} = &*model.leafs[&path].borrow();
             
             let val = if let RequestCode::WRITE = op { 
-                match decorator_string_to_value(input_val, *ty) {
+                match string_to_value(input_val, *ty) {
                     Ok(val) => {
-                        log::info!("Parsed val: {:?}", &val);
+                        log::info!("Parsed val: {:?}, ty: {:?}", &val, ty);
                         val
                     }
                     Err(err) => {
@@ -78,6 +81,14 @@ pub fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
                 }
                 Ok(ProtoMsg(AnswerCode::OK_WRITE, path, val)) => {
                     log::info!("OK_WRITE {} {:?}", path, val)
+                }
+                Ok(ProtoMsg(AnswerCode::ERR_CUSTOM, path, val)) => {
+                    if let Value::U32(code) = val {
+                        let err: HolterError = code.try_into().unwrap();
+                        crate::alert(&format!("Custom error: {:?}", err));
+                    } else {
+                        panic!("Bad custom error format");
+                    }
                 }
                 Err(err) => {
                     crate::alert(&format!("Answer update error: {}", err));
@@ -263,60 +274,59 @@ impl Default for MetaDesc {
     }
 }
 
-fn decorator_string_to_value(i: &str, hint: TypeTag) -> Result<Value, syn::Error>  {
-    match hint {
-        TypeTag::STR => {
-            let wrapped_i = "\"".to_string() + i + "\"";
-            string_to_value(&wrapped_i)
+macro_rules! str_val_impl {
+    ($pat:literal, $variant:ident, $ty:ident, $input:ident) => {{
+        let res = syn::parse_str::<LitInt>($input)?;
+        if let $pat | "" = res.suffix() {
+            Ok(Value::$variant(res.base10_parse::<$ty>()?))
+        } else {
+            Err(syn::Error::new(Span::call_site(), 
+                "Failed to parse Int, wrong literal prefix"))
         }
-        TypeTag::BYTES => {
-            let wrapped_i = "[".to_string() + i + "]";
-            string_to_value(&wrapped_i)
-        }
-        _ => string_to_value(i),
-    }
+    }};
 }
 
-// TODO: move to ellocopo2::parse under std feat
-fn string_to_value(i: &str) -> Result<Value, syn::Error>  {
-    if i.is_empty() || i == "()"{
-        return Ok(Value::UNIT(()));
-    }
-    
-    let val = if let Ok(res) = syn::parse_str::<LitInt>(i) {
-        match res.suffix() {
-            "u8"  => { Value::U8(res.base10_parse::<u8>()?) },
-            "u16" => { Value::U16(res.base10_parse::<u16>()?) },
-            "u32" => { Value::U32(res.base10_parse::<u32>()?) },
-            "i32" | "" => { Value::I32(res.base10_parse::<i32>()?) },
-            _ => return Err(syn::Error::new(Span::call_site(), 
-                    "Failed to parse Int, not supported literal prefix")),
-        }
-    } 
-    else if let Ok(res) = syn::parse_str::<LitBool>(i) {
-        Value::BOOL(res.value)
-    } 
-    else if let Ok(res) = syn::parse_str::<LitStr>(i) {
-        Value::STR(res.value())
-    }
-    else if let Ok(res) = syn::parse_str::<ExprArray>(i) {
-        let mut bytes = Vec::new();
-        for e in res.elems {
-            log!(&e);
-            if let Expr::Lit(ExprLit {lit: Lit::Int(elem), ..}) = e {
-                let elem = elem.base10_parse::<u8>()?;
-                bytes.push(elem);
+fn string_to_value(i: &str, ty: TypeTag) -> Result<Value, syn::Error>  {
+    use TypeTag::*;
+    match ty {
+        UNIT => {
+            if i.is_empty() || i == "()"{
+                Ok(Value::UNIT(()))
             } else {
-                return Err(syn::Error::new(Span::call_site(), "Failed to parse array element"));
+                Err(syn::Error::new(Span::call_site(), "Error parse ()"))
             }
         }
-        Value::BYTES(bytes)
+        BOOL => {
+            let res = syn::parse_str::<LitBool>(i)?;
+            Ok(Value::BOOL(res.value))
+        }
+        I32 => str_val_impl!("i32", I32, i32, i),
+        I16 => str_val_impl!("i16", I16, i16, i),
+        I8  => str_val_impl!( "i8",  I8,  i8, i),
+        U32 => str_val_impl!("u32", U32, u32, i),
+        U16 => str_val_impl!("u16", U16, u16, i),
+        U8  => str_val_impl!( "u8",  U8,  u8, i),
+        STR => {
+            let wrapped_i = "\"".to_string() + i + "\"";
+            let res = syn::parse_str::<LitStr>(&wrapped_i)?;
+            Ok(Value::STR(res.value()))
+        }
+        BYTES => {
+            let wrapped_i = "[".to_string() + i + "]";
+            let res = syn::parse_str::<ExprArray>(&wrapped_i)?;
+            let mut bytes = Vec::new();
+            for e in res.elems {
+                log!(&e);
+                if let Expr::Lit(ExprLit {lit: Lit::Int(elem), ..}) = e {
+                    let elem = elem.base10_parse::<u8>()?;
+                    bytes.push(elem);
+                } else {
+                    return Err(syn::Error::new(Span::call_site(), "Failed to parse array element"));
+                }
+            }
+            Ok(Value::BYTES(bytes))
+        }
     }
-    else {
-        return Err(syn::Error::new(Span::call_site(), "else clause"));
-    };
-
-    Ok(val)
 }
 
 
