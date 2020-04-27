@@ -50,10 +50,7 @@
         "time": "u32"
     },
 
-    "time": {
-        "@access": "RW",
-        "@type": "u32"
-    },
+    "time": "u32",
 
     "signal": {
         "@access": "RW",
@@ -99,6 +96,7 @@
 
     "build": {        
         "@access":  "RO",
+        "@fast": true,
         "version":  "str",
         "compiler": "str",
         "git":      "str",
