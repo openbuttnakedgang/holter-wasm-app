@@ -12,6 +12,9 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
+        #with:
+        #    repository: ButtNaked/delta.git
+        #    token: ${{ secrets.EXT_GHA }}
 
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
