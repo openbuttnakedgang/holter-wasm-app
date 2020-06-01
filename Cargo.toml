@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 
 
 [dependencies]
-seed = { version = "^0.6.0", path = "seed" }
+seed = { version = "0.7.0" }
 wasm-bindgen-futures = "0.4.10"
 js-sys = "0.3.37"
 log = "0.4.6"
@@ -26,6 +26,11 @@ holter-support = { git = "https://github.com/openbuttnakedgang/holter-support.gi
 syn = { version = "1.0", features = ["full", "extra-traits", "derive"] }
 proc-macro2 = "1.0"
 
+[dependencies.delta ]
+version = "0.1"
+git = "ssh://git@github.com:/ButtNaked/delta.git"
+features = ["std"]
+
 [dependencies.wasm-bindgen]
 version = "^0.2.50"
 features = ["serde-serialize"]
@@ -36,6 +41,7 @@ features = [
   'Navigator',
   'Window',
   'Response',
+  'DomException',
 ]
 
 

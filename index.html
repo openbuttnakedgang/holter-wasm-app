@@ -38,13 +38,13 @@
                 console.log(v);
             }
 
-            class HolterDevice {
+            class DeviceJs {
                 constructor(device) {
                     console.log(device);
                     this.device_ = device;
                 }
 
-                connect() {
+                js_connect() {
                     return this.device_.open()
                         .then(() => {
                           if (this.device_.configuration === null) {
@@ -54,29 +54,35 @@
                         .then(() => this.device_.claimInterface(0));
                 }
 
-                send_cmd(data) {
+                js_close() {
+                    return this.device_.close();
+                }
+
+                js_reset() {
+                    return this.device_.reset();
+                }
+
+                js_send_cmd(data) {
                     const { endpointNumber } = this.device_.configuration.interfaces[0].alternate.endpoints[1];
                     return this.device_.transferOut(endpointNumber, data);
                 }
 
-                recv_cmd() {
+                js_recv_cmd() {
                     const { endpointNumber } = this.device_.configuration.interfaces[0].alternate.endpoints[0];
                     return this.device_.transferIn(endpointNumber, 64);
                 }
 
-                get number() {
-                    return this._number;
+                js_recv_file(size) {
+                    return this.device_.transferIn(0x02, 0x800);
                 }
 
-                set number(n) {
-                    return this._number = n;
-                }
-
-                descriptor() {
+                js_descriptor() {
                     return {
                         productName: this.device_.productName,
                         serialNumber: this.device_.serialNumber,
                         manufacturerName: this.device_.manufacturerName,
+                        vid: this.device_.vendorId,
+                        pid: this.device_.productId,
                     };
                 }
             }
@@ -96,9 +102,10 @@
               return 42;
             }
 
-            function requestDevice() {
+            function js_requestDevice() {
               const filters = [
-                { 'vendorId': 0x0483, 'productId': 0x7503 },
+                { 'vendorId': 0x0483, 'productId': 0xBABA }, // Holter
+                { 'vendorId': 0x0483, 'productId': 0xDEDA }, // Holter DFU loader
               ];
               return navigator.usb.requestDevice({ 'filters': filters }).then(
                   device => { 
@@ -107,7 +114,7 @@
                       //const arr = new Uint8Array(3);
                       //arr.set([1,2,3]);
                       //return arr;
-                      return new HolterDevice(device);
+                      return new DeviceJs(device);
                   }
               )
             }

@@ -1,66 +1,112 @@
-use std::collections::HashMap;
+
 use std::rc::Rc;
+use std::cell::RefCell;
+
+//#[macro_use]
+//extern crate log;
 
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
+//use wasm_bindgen::JsCast;
 use gloo_timers::future::TimeoutFuture;
 use seed::{*, prelude::*};
 
+mod device;
+mod cfg;
 mod tree;
 
 #[derive(Default)]
 struct Model {
-    pub teee: tree::Model,
-    pub device: Option<Rc<HolterDevice>>,
-    pub descriptor: Option<String>,
+    treee: tree::Model,
+    device: Rc::<device::Device>,
 }
 
 #[derive(Clone)]
 enum Msg {
     Tree(tree::Msg),
-    ConnectButton,
-    NewDevice(Rc<HolterDevice>),
-    SchemeLoaded,
-    SendCmd,
-    RecCmd,
-    Nothing,
+    Connect,
+    AutoConnect,
+    DevConnected(Rc<device::Device>),
+    //NewDevice(Rc<HolterDevice>),
+    CfgLoaded(String),
+    DownloadFile,
 }
 
 // dev: wasm-pack build --target web --out-name package --dev
 // run server: cargo make serve
 
+
 fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
     match msg {
         Msg::Tree(tree::Msg::GRequestUpdate(msg)) => {
-            //crate::alert(&format!("Global: name {}, val {}", name, val));
-            
-            let device =  Rc::clone(model.device.as_ref().unwrap());
-            orders.perform_cmd(
-                handle_cmd(device, msg)
-            );
+            let device =  Rc::clone(&model.device);
+            orders.perform_cmd( async move {
+                log::info!("Performing cmd");
+                let dev_ans = device.send_recv_cmd(msg.clone()).await;
+                match dev_ans {
+                    Ok(msg) => { 
+                        log::info!("End::Performing cmd");
+                        Some(Msg::Tree(tree::Msg::GAnswerUpdate(Ok(msg))))
+                    },
+                    Err(e) => {
+                        log::error!("{:?}", e);
+                        log::info!("End::Performing cmd");
+                        Some(Msg::Connect)
+                    }
+                }
+            });
         }
         Msg::Tree(msg) => { 
-            tree::update(msg, &mut model.teee, &mut orders.proxy(Msg::Tree));
+            tree::update(msg, &mut model.treee, &mut orders.proxy(Msg::Tree));
         }
-        Msg::ConnectButton => {
-            log!("ConnectButton pressed");
+        Msg::Connect => {
+            log!("Connect pressed");
             orders
-                .perform_cmd(request_device());
+                .perform_cmd(async {
+                    let r = device::Device::request_device()
+                        .await;
+                    use device::Error;
+                    match r {
+                        Ok(dev) => Some(Msg::DevConnected(Rc::new(dev))),
+
+                        Err(e @ Error::NotSelected) => { 
+                            log::info!("{:?}", e);
+                            None
+                        }
+                        Err(e @ Error::Security) => { 
+                            log::error!("{:?}", e);
+                            None
+                        }
+                        Err(e) => {
+                            log::error!("{:?}", e);
+                            Some(Msg::AutoConnect)
+                        }
+                    }
+                });
         }
-        Msg::NewDevice(dev) => {
-            model.device = Some(dev);
-            let desc: HashMap<String,String> = model.device
-                .as_ref()
-                .unwrap()
-                .descriptor()
-                .into_serde()
-                .unwrap();
-            let desc_s: String = desc
-                .iter()
-                .fold("".into(), |acc, (key, value)| acc + key + ": " + value + ", ");
-            model.descriptor = Some(desc_s);
+        Msg::AutoConnect => {
+            orders.perform_cmd(async {auto_connect().await});
         }
-        msg @ _ => log!(msg),
+        Msg::DevConnected(dev) => {
+
+            if model.device.is_reconnecting(&dev) {
+                log::info!("Device reconnected");
+            } else {
+                log::info!("New device connected");
+                let desc = dev.descriptor().unwrap().clone();
+                orders.perform_cmd(async {
+                    let scheme = cfg::load(desc).await;
+                    Msg::CfgLoaded(scheme)
+                });
+            };
+            model.device = dev;
+        }
+        Msg::CfgLoaded(scheme) => {
+            orders.send_msg(Msg::Tree(tree::Msg::SetScheme(scheme)));
+        }
+        Msg::DownloadFile => {
+            let device = Rc::clone(&model.device);
+            orders.perform_cmd(download_file(device));
+        }
     }
 }
 
@@ -73,117 +119,59 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
 //    Msg::Increment
 //}
 
-async fn request_device() -> Msg {
-    let result = wasm_bindgen_futures::JsFuture::from(requestDevice()).await;
-    let val = result.unwrap();
-    log!(&val);
-    let dev: HolterDevice = JsCast::dyn_into(val).unwrap();
-    // connect
-    let result = wasm_bindgen_futures::JsFuture::from(dev.connect()).await;
-    let val = result.unwrap();
-    log!("connect ", val);
-
-
-    //let v = js_sys::Uint8Array::new(&val).to_vec();
-
-    Msg::NewDevice(Rc::new(dev))
+async fn auto_connect() -> Msg {
+    TimeoutFuture::new(100).await;
+    Msg::Connect
 }
 
+async fn download_file(device: Rc<device::Device>) -> Option<Msg> {
+    use ellocopo2::owned::{Msg as DevMsg, Value};
+    use ellocopo2::AnswerCode;
 
-use std::convert::TryInto;
-use ellocopo2::RequestBuilder;
-//use ellocopo2::Value as NotOwnValue;
-//use ellocopo2::owned::Value as Value;
-//use ellocopo2::Msg as NotOwnMsg;
-use ellocopo2::owned::Msg as ProtoMsg;
-//use ellocopo2::owned::Value;
-use ellocopo2::RequestCode;
-use ellocopo2::AnswerCode;
-use ellocopo2::ParseMsg;
-use ellocopo2::ParserError;
-use ellocopo2::MAX_MSG_SZ;
-
-async fn handle_cmd(device: Rc<HolterDevice>, ProtoMsg(code, ref path, ref value): ProtoMsg) -> Msg {
-    
-    let mut buf_out = [0u8;MAX_MSG_SZ];
-    let buf_out = {
-        let mut req = RequestBuilder::new(&mut buf_out);
-        let sz = req 
-            .path(&path)
-            .code(code.try_into().unwrap())
-            .payload(value.into())
-            .build()
-            .unwrap();
-        &buf_out[..sz]
-    };
-
-    // Allocate recv transaction
-    let future_in = wasm_bindgen_futures::JsFuture::from(device.recv_cmd());
-    
-    // Send
-    let result_out = wasm_bindgen_futures::JsFuture::from(device.send_cmd(buf_out)).await;
-    let val_out = result_out.unwrap();
-    js_debug(&val_out);
-    
-    // Awaiting recv callback
-    let result_in = future_in.await;
-    let val_in = result_in.unwrap();
-    js_debug(&val_in);
-    let data_view = js_sys::Reflect::get(&val_in, &JsValue::from_str("data")).unwrap();
-    js_debug(&data_view);
-    let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
-    js_debug(&array_buf);
-
-    let mut cmd_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
-    log::info!("{:?}",cmd_buf);
-    
-    let mut parser = ParseMsg::new();
-    let mut parsed_msg: Option<ProtoMsg> = None;
-    while { let len = cmd_buf.len(); len < MAX_MSG_SZ } {
-
-        let res = parser.try_parse(&cmd_buf);
-        match res {
-            Ok(msg) => {
-                parsed_msg = Some(msg.into());
-                break;
+    async fn cmd(device: &Rc<device::Device>, msg: DevMsg) -> Result<Value, ()> {
+        let dev_ans = device.send_recv_cmd(msg).await;
+        match dev_ans {
+            Ok(msg) => { 
+                Ok(msg.2)
+            },
+            Err(e) => {
+                log::error!("{:?}", e);
+                return Err(());
             }
-            Err(ParserError::NeedMoreData) => {
-                // Allocate recv transaction
-                let future_in = wasm_bindgen_futures::JsFuture::from(device.recv_cmd());
-                // Awaiting recv callback
-                let result_in = future_in.await;
-                let val_in = result_in.unwrap();
-                js_debug(&val_in);
-                let data_view = js_sys::Reflect::get(&val_in, &JsValue::from_str("data")).unwrap();
-                js_debug(&data_view);
-                let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
-                js_debug(&array_buf);
-                let tmp_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
-                log::info!("{:?}", &tmp_buf);
-
-                cmd_buf.extend(&tmp_buf);
-            }
-            Err(e) => panic!("{:?}", e),
         }
     }
     
-    log::info!("{:#?}", parsed_msg.as_ref().unwrap());
+    let block_cnt = 0x10;
 
-    Msg::Tree(tree::Msg::GAnswerUpdate(Ok(parsed_msg.unwrap())))
-}
+    log::info!("Performing download");
 
-async fn fetch_scheme() -> Msg {
-    let response = fetch("public/scheme.json").await.expect("HTTP request failed");
-
-    let user: String = response
-        .check_status() // ensure we've got 2xx status
-        .expect("status check failed")
-        .text()
+    let _ = cmd(&device, DevMsg (AnswerCode::OK_WRITE, String::from("/io/file/pos"), Value::U32(0)))
         .await
-        .expect("Failed to des");
+        .unwrap();
 
-    Msg::Tree(tree::Msg::SetScheme(user))
+    let _ = cmd(&device, DevMsg (AnswerCode::OK_WRITE, String::from("/io/file/len"), Value::U32(block_cnt)))
+        .await
+        .unwrap();
+    
+    let _ = cmd(&device, DevMsg (AnswerCode::OK_WRITE, String::from("/io/file/start"), Value::UNIT(())))
+        .await
+        .unwrap();
+    
+    for _ in 0 .. block_cnt {
+        let buf = device.recv_file_block().await.unwrap();
+        log::info!("recv_file_block res {:?}", buf.len());
+        log::info!("{:x?}", &buf[.. delta::defs::HEADER_SZ]);
+        let mut parser = delta::block::parse::BlockParser::new();
+        let r = parser.try_open_block(&buf[..]);
+        log::info!("try_open_block res: {:?}", r);
+        log::info!("Blk header: {:#?}", parser.header());
+    }
+
+    log::info!("End::Performing download");
+
+    None
 }
+
 
 // ------ ------
 // View
@@ -195,9 +183,35 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
             C!["row"],
             button![
                 C!["two columns"],
-                simple_ev(Ev::Click, Msg::ConnectButton),
+                simple_ev(Ev::Click, Msg::Connect),
                 "Connect",
-                if let Some(_) = &model.device {
+                if model.device.is_connected() {
+                    attrs!{
+                        At::Disabled => true
+                    }
+                } else {
+                    attrs!{}
+                }
+            ],
+        ],
+        div![
+            C!["container"],
+            if let Some(desc) = model.device.descriptor() {
+                format!("{}", desc)
+            } else {
+              "No connected devices!".into()
+            }
+        ],
+        div![
+            C!["container"],
+            tree::view(&model.treee).map_msg(Msg::Tree)
+        ],
+        div![
+            C!["container"],
+            button![
+                simple_ev(Ev::Click, Msg::DownloadFile),
+                "Download file",
+                if !model.device.is_connected() {
                     attrs!{
                         At::Disabled => true
                     }
@@ -212,18 +226,6 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
                     At::Value => 50,
                 }
             ]
-        ],
-        div![
-            C!["container"],
-            if let Some(desc) = &model.descriptor {
-                &desc
-            } else {
-                "No connected devices!"
-            }
-        ],
-        div![
-            C!["container"],
-            tree::view(&model.teee).map_msg(Msg::Tree)
         ]
     ]
 }
@@ -238,11 +240,11 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
 //    ]
 //}
 
-fn after_mount(_url: Url, orders: &mut impl Orders<Msg>) -> AfterMount<Model> {
-    orders
-        .perform_cmd(fetch_scheme());
-    AfterMount::default()
-}
+//fn after_mount(_url: Url, orders: &mut impl Orders<Msg>) -> AfterMount<Model> {
+//    orders
+//        .perform_cmd(async {});
+//    AfterMount::default()
+//}
 
 // ------ ------
 // Bindings
@@ -252,34 +254,6 @@ fn after_mount(_url: Url, orders: &mut impl Orders<Msg>) -> AfterMount<Model> {
 extern "C" {
     fn alert(s: &str);
     fn js_debug(v: &JsValue);
-}
-
-#[wasm_bindgen]
-extern "C" {
-
-    type HolterDevice;
-
-    #[wasm_bindgen(method)]
-    fn connect(this: &HolterDevice) -> js_sys::Promise;
-
-    #[wasm_bindgen(method)]
-    fn send_cmd(this: &HolterDevice, data: &[u8]) -> js_sys::Promise;
-    #[wasm_bindgen(method)]
-    fn recv_cmd(this: &HolterDevice) -> js_sys::Promise;
-    #[wasm_bindgen(method)]
-    fn descriptor(this: &HolterDevice) -> js_sys::Map;
-
-    #[wasm_bindgen(method, getter)]
-    fn number(this: &HolterDevice) -> u32;
-    #[wasm_bindgen(method, setter)]
-    fn set_number(this: &HolterDevice, number: u32) -> HolterDevice;
-
-    #[wasm_bindgen]
-    pub fn f1() -> js_sys::Promise;
-
-    #[wasm_bindgen]
-    pub fn requestDevice() -> js_sys::Promise;
-
 }
 
 #[wasm_bindgen(start)]
@@ -292,6 +266,8 @@ pub fn render() {
 
     App::builder(update, view)
         //.window_events(window_events)
-        .after_mount(after_mount)
+//        .after_mount(after_mount)
         .build_and_start();
 }
+
+

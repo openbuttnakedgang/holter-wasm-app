@@ -9,7 +9,7 @@ use serde_json::Value as JsonValue;
 use syn::{LitInt, LitStr, LitBool, ExprArray, Expr, ExprLit, Lit};
 use proc_macro2::Span;
 
-use ellocopo2::owned::{Msg as ProtoMsg, Value};
+use ellocopo2::owned::{Msg as DevMsg, Value};
 use ellocopo2::TypeTag;
 use ellocopo2::RequestCode;
 use ellocopo2::AnswerCode;
@@ -34,8 +34,8 @@ pub struct Model {
 pub enum Msg {
     SetScheme(String),
     SumbmitRequest(String, RequestCode),
-    GRequestUpdate(ProtoMsg),
-    GAnswerUpdate(Result<ProtoMsg, String>),
+    GRequestUpdate(DevMsg),
+    GAnswerUpdate(Result<DevMsg, String>),
     InputUpdated(String, String),
     FoldNode(Rc<RefCell<TNode>>),
 }
@@ -69,20 +69,20 @@ pub fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
                 }
             } else { Value::UNIT(()) };
             
-            let msg = ProtoMsg(op.into(), path, val);
+            let msg = DevMsg(op.into(), path, val);
             orders.send_msg(Msg::GRequestUpdate(msg));
         }
         Msg::GAnswerUpdate(ans_res) => {
             
             match ans_res {
-                Ok(ProtoMsg(AnswerCode::OK_READ, path, inval)) => {
+                Ok(DevMsg(AnswerCode::OK_READ, path, inval)) => {
                     let TLeaf{view: ViewLeaf{val, ..}, ..} = &mut *model.leafs[&path].borrow_mut();
                     *val = Some(inval);
                 }
-                Ok(ProtoMsg(AnswerCode::OK_WRITE, path, val)) => {
+                Ok(DevMsg(AnswerCode::OK_WRITE, path, val)) => {
                     log::info!("OK_WRITE {} {:?}", path, val)
                 }
-                Ok(ProtoMsg(AnswerCode::ERR_CUSTOM, path, val)) => {
+                Ok(DevMsg(AnswerCode::ERR_CUSTOM, path, val)) => {
                     if let Value::U32(code) = val {
                         let err: HolterError = code.try_into().unwrap();
                         crate::alert(&format!("Custom error: {:?}", err));
@@ -145,7 +145,7 @@ fn view_tree(tree: &Tree) -> Node<Msg> {
     }
 }
 
-fn view_leaf(TLeaf{name, path, meta: MetaDesc{w, r, ..}, view: ViewLeaf {input_val, val, ..}, ..}: &TLeaf) -> Node<Msg> {
+fn view_leaf(TLeaf{name, path, ty, meta: MetaDesc{w, r, ..}, view: ViewLeaf {input_val, val, ..}, ..}: &TLeaf) -> Node<Msg> {
     
     li![
         id![&path],
@@ -165,23 +165,25 @@ fn view_leaf(TLeaf{name, path, meta: MetaDesc{w, r, ..}, view: ViewLeaf {input_v
         } else { vec![empty![]] },
         if *w {
             vec![
-                input![
-                    C!["view-input"],
-                    attrs! {
-                        At::Placeholder => "Input data",
-                        At::Value => input_val,
-                    },
-                    {
-                        let path = path.clone();
-                        keyboard_ev(Ev::KeyDown, move |keyboard_event| {
-                            IF!(keyboard_event.key_code() == ENTER_KEY => Msg::SumbmitRequest(path, RequestCode::WRITE))
-                        })
-                    },
-                    {
-                        let path = path.clone();
-                        input_ev(Ev::Input, move |txt| Msg::InputUpdated(path, txt))
-                    }
-                ],
+                if *ty != TypeTag::UNIT {
+                    input![
+                        C!["view-input"],
+                        attrs! {
+                            At::Placeholder => "Input data",
+                            At::Value => input_val,
+                        },
+                        {
+                            let path = path.clone();
+                            keyboard_ev(Ev::KeyDown, move |keyboard_event| {
+                                IF!(keyboard_event.key_code() == ENTER_KEY => Msg::SumbmitRequest(path, RequestCode::WRITE))
+                            })
+                        },
+                        {
+                            let path = path.clone();
+                            input_ev(Ev::Input, move |txt| Msg::InputUpdated(path, txt))
+                        }
+                    ]
+                } else { empty![] },
                 button![
                     C!["view-wbutton"],
                     "(W)",
