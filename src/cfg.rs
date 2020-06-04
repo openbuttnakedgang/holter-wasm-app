@@ -1,5 +1,5 @@
 
-use seed::{*, prelude::*};
+use seed::prelude::*;
 
 use crate::device::Desc;
 

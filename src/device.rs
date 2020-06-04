@@ -1,5 +1,4 @@
 
-use std::rc::Rc;
 use std::cell::RefCell;
 use std::convert::TryInto;
 
@@ -10,13 +9,7 @@ use wasm_bindgen::JsCast;
 use web_sys::DomException;
 
 use ellocopo2::RequestBuilder;
-//use ellocopo2::Value as NotOwnValue;
-//use ellocopo2::owned::Value as Value;
-//use ellocopo2::Msg as NotOwnMsg;
 use ellocopo2::owned::Msg as DevMsg;
-//use ellocopo2::owned::Value;
-use ellocopo2::RequestCode;
-use ellocopo2::AnswerCode;
 use ellocopo2::ParseMsg;
 use ellocopo2::ParserError;
 use ellocopo2::MAX_MSG_SZ;
@@ -31,6 +24,8 @@ extern "C" {
     fn js_connect(this: &DeviceJs) -> js_sys::Promise;
     #[wasm_bindgen(method)]
     fn js_close(this: &DeviceJs) -> js_sys::Promise;
+    #[wasm_bindgen(method)]
+    fn js_reset(this: &DeviceJs) -> js_sys::Promise;
 
     #[wasm_bindgen(method)]
     fn js_send_cmd(this: &DeviceJs, data: &[u8]) -> js_sys::Promise;
@@ -38,6 +33,8 @@ extern "C" {
     fn js_recv_cmd(this: &DeviceJs) -> js_sys::Promise;
     #[wasm_bindgen(method)]
     fn js_recv_file(this: &DeviceJs, size: usize) -> js_sys::Promise;
+    #[wasm_bindgen(method)]
+    fn js_recv_vis(this: &DeviceJs, size: usize) -> js_sys::Promise;
 
     #[wasm_bindgen(method)]
     fn js_descriptor(this: &DeviceJs) -> js_sys::Map;
@@ -88,6 +85,8 @@ impl Device {
         
         let desc = dev.descriptor()
             .await?;
+
+        dev.reset().await?;
 
         let ty = match desc.pid {
             0xBABA => Type::Holter,
@@ -164,6 +163,23 @@ impl Device {
 
         Ok(r?)
     }
+
+    pub async fn recv_vis(&self, buf: &mut [u8]) -> Result<usize,Error> {
+        if let Type::Loader = self.ty { return Err(Error::DevTypeApi); }
+        if !self.is_connected() { return Err(Error::NotConnected)}
+
+        let r = { 
+            let dev = self.d.borrow();
+            DeviceJs::recv_vis(dev.as_ref().unwrap(), buf).await
+        };
+
+        if r.is_err() {
+            let mut dev = self.d.borrow_mut();
+            *dev = None;
+        }
+
+        Ok(r?)
+    }
 }
 
 impl DeviceJs {
@@ -195,6 +211,13 @@ impl DeviceJs {
     async fn close(&self) -> Result<(),JsValue> {
         let f = wasm_bindgen_futures::JsFuture::from(self.js_close());
         let _ = f.await?;
+        Ok(())
+    }
+
+    async fn reset(&self) -> Result<(),JsValue> {
+        let f = wasm_bindgen_futures::JsFuture::from(self.js_reset());
+        let r = f.await?;
+        log!("Device reset: ", r);
         Ok(())
     }
 
@@ -285,11 +308,32 @@ impl DeviceJs {
         let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
         //js_debug(&array_buf);
 
-        let cmd_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
-        //log::info!("{:x?}",cmd_buf);
+        let buf = js_sys::Uint8Array::new(&array_buf).to_vec();
+        //log::info!("{:x?}",buf);
     
-        Ok(cmd_buf)
+        Ok(buf)
     }
+
+    async fn recv_vis(&self, buf: &mut [u8]) -> Result<usize, JsValue> {
+        
+        // Allocating recv transaction
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_vis(buf.len()));
+
+        // Awaiting recv future
+        let msg_ans = future_in.await?;
+        //js_debug(&msg_ans);
+        let data_view = js_sys::Reflect::get(&msg_ans, &JsValue::from_str("data")).unwrap();
+        //js_debug(&data_view);
+        let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
+        //js_debug(&array_buf);
+
+        let in_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
+        //log::info!("{:x?}",in_buf);
+        (&mut buf[.. in_buf.len()]).copy_from_slice(&in_buf);
+    
+        Ok(in_buf.len())
+    }
+
 
 }
 

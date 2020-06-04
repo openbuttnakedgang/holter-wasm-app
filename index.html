@@ -1,32 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
-    <meta name="description" content="">
+        <meta name="description" content="">
 
-    <link href="//fonts.googleapis.com/css?family=Raleway:400,300,600" rel="stylesheet" type="text/css">
+        <link href="//fonts.googleapis.com/css?family=Raleway:400,300,600" rel="stylesheet" type="text/css">
 
-    <link rel="stylesheet" href="https://unpkg.com/98.css" />
-    <!-- <link rel="stylesheet" href="public/css/normalize.css"> -->
-    <!-- <link rel="stylesheet" href="public/css/skeleton.css"> -->
+        <link rel="stylesheet" href="https://unpkg.com/98.css" />
+        <!-- <link rel="stylesheet" href="public/css/normalize.css"> -->
+        <!-- <link rel="stylesheet" href="public/css/skeleton.css"> -->
 
-    <link rel="icon" type="image/png" href="/public/favicon.png">
+        <link rel="icon" type="image/png" href="/public/favicon.png">
 
-    <title>A Title</title>
+        <title>A Title</title>
+        <style>
+        #canvas {
+            height : 100%;
+            width  : 100%;
+        }
+        </style>
 
     </head>
 
     <body>
         <div class="window" style="margin: 32px; width: 900px">
-          <div class="title-bar">
-            <div class="title-bar-text">
-              Holter wasm app
+            <div class="title-bar">
+                <div class="title-bar-text">
+                    Holter wasm app
+                </div>
             </div>
-          </div>
-          <div id="app" class="window-body">
-          </div>
+            <div id="app" class="window-body">
+            </div>
         </div>
         <script type="module">
             // https://rustwasm.github.io/docs/wasm-bindgen/examples/without-a-bundler.html
@@ -34,90 +40,95 @@
             init('./pkg/package_bg.wasm');
         </script>
         <script>
-            function js_debug(v) {
-                console.log(v);
-            }
 
-            class DeviceJs {
-                constructor(device) {
-                    console.log(device);
-                    this.device_ = device;
+function js_debug(v) {
+    console.log(v);
+}
+
+class DeviceJs {
+    constructor(device) {
+        console.log(device);
+        this.device_ = device;
+    }
+
+    js_connect() {
+        return this.device_.open()
+            .then(() => {
+                if (this.device_.configuration === null) {
+                    return this.device_.selectConfiguration(1);
                 }
+            })
+            .then(() => this.device_.claimInterface(0));
+    }
 
-                js_connect() {
-                    return this.device_.open()
-                        .then(() => {
-                          if (this.device_.configuration === null) {
-                            return this.device_.selectConfiguration(1);
-                          }
-                        })
-                        .then(() => this.device_.claimInterface(0));
-                }
+    js_close() {
+        return this.device_.close();
+    }
 
-                js_close() {
-                    return this.device_.close();
-                }
+    js_reset() {
+        return this.device_.reset();
+    }
 
-                js_reset() {
-                    return this.device_.reset();
-                }
+    js_send_cmd(data) {
+        const { endpointNumber } = this.device_.configuration.interfaces[0].alternate.endpoints[1];
+        return this.device_.transferOut(endpointNumber, data);
+    }
 
-                js_send_cmd(data) {
-                    const { endpointNumber } = this.device_.configuration.interfaces[0].alternate.endpoints[1];
-                    return this.device_.transferOut(endpointNumber, data);
-                }
+    js_recv_cmd() {
+        const { endpointNumber } = this.device_.configuration.interfaces[0].alternate.endpoints[0];
+        return this.device_.transferIn(endpointNumber, 64);
+    }
 
-                js_recv_cmd() {
-                    const { endpointNumber } = this.device_.configuration.interfaces[0].alternate.endpoints[0];
-                    return this.device_.transferIn(endpointNumber, 64);
-                }
+    js_recv_file(size) {
+        return this.device_.transferIn(0x02, 0x800);
+    }
 
-                js_recv_file(size) {
-                    return this.device_.transferIn(0x02, 0x800);
-                }
+    js_recv_vis(size) {
+        return this.device_.transferIn(0x03, size);
+    }
 
-                js_descriptor() {
-                    return {
-                        productName: this.device_.productName,
-                        serialNumber: this.device_.serialNumber,
-                        manufacturerName: this.device_.manufacturerName,
-                        vid: this.device_.vendorId,
-                        pid: this.device_.productId,
-                    };
-                }
-            }
+    js_descriptor() {
+        return {
+            productName: this.device_.productName,
+            serialNumber: this.device_.serialNumber,
+            manufacturerName: this.device_.manufacturerName,
+            vid: this.device_.vendorId,
+            pid: this.device_.productId,
+        };
+    }
+}
 
-            function resolveAfter2Seconds(x) { 
-              return new Promise(resolve => {
-                setTimeout(() => {
-                  resolve(x);
-                }, 2000);
-              });
-            }
+function resolveAfter2Seconds(x) { 
+    return new Promise(resolve => {
+        setTimeout(() => {
+            resolve(x);
+        }, 2000);
+    });
+}
 
-            async function f1() {
-              var x = await resolveAfter2Seconds(10);
-              console.log(x); // 10
-              console.log('test'); // 10
-              return 42;
-            }
+async function f1() {
+    var x = await resolveAfter2Seconds(10);
+    console.log(x); // 10
+    console.log('test'); // 10
+    return 42;
+}
 
-            function js_requestDevice() {
-              const filters = [
-                { 'vendorId': 0x0483, 'productId': 0xBABA }, // Holter
-                { 'vendorId': 0x0483, 'productId': 0xDEDA }, // Holter DFU loader
-              ];
-              return navigator.usb.requestDevice({ 'filters': filters }).then(
-                  device => { 
-                      //console.log(device);
-                      ////return {quack: "test"};
-                      //const arr = new Uint8Array(3);
-                      //arr.set([1,2,3]);
-                      //return arr;
-                      return new DeviceJs(device);
-                  }
-              )
-            }
+function js_requestDevice() {
+    const filters = [
+        { 'vendorId': 0x0483, 'productId': 0xBABA }, // Holter
+        { 'vendorId': 0x0483, 'productId': 0xDEDA }, // Holter DFU loader
+    ];
+    return navigator.usb.requestDevice({ 'filters': filters }).then(
+        device => { 
+            //console.log(device);
+            ////return {quack: "test"};
+            //const arr = new Uint8Array(3);
+            //arr.set([1,2,3]);
+            //return arr;
+            return new DeviceJs(device);
+        }
+    )
+}
 
         </script>
     </body>

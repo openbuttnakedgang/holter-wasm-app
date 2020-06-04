@@ -82,7 +82,7 @@ pub fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
                 Ok(DevMsg(AnswerCode::OK_WRITE, path, val)) => {
                     log::info!("OK_WRITE {} {:?}", path, val)
                 }
-                Ok(DevMsg(AnswerCode::ERR_CUSTOM, path, val)) => {
+                Ok(DevMsg(AnswerCode::ERR_CUSTOM, _path, val)) => {
                     if let Value::U32(code) = val {
                         let err: HolterError = code.try_into().unwrap();
                         crate::alert(&format!("Custom error: {:?}", err));

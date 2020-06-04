@@ -43,6 +43,18 @@ features = [
   'Window',
   'Response',
   'DomException',
+  'Document',
+  'Element',
+  'HtmlCanvasElement',
+  'WebGlBuffer',
+  'WebGlRenderingContext',
+  'WebGlProgram',
+  'WebGlUniformLocation',
+  'WebGlShader',
+  'HtmlElement',
+  'Node',
+  'Window',
+  'Performance',
 ]
 
 
