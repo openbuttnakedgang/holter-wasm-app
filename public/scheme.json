@@ -59,7 +59,8 @@
         },
         "reof": {
             "frq" :"u8"
-        }
+        },
+        "tst_sig": "bool"
     },
 
     "calib": {
