@@ -1,6 +1,6 @@
 
 use std::rc::Rc;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 //#[macro_use]
@@ -22,6 +22,7 @@ struct Model {
     device: Rc<device::Device>,
     vis: Rc<AtomicBool>,
     vis_group: Rc<Cell<VisSelectedGroup>>,
+    upload_data: Option<Vec<u8>>,
 }
 
 #[derive(Clone)]
@@ -36,6 +37,8 @@ enum Msg {
     VisStart,
     VisUpdate,
     VisSelectedGroup(VisSelectedGroup),
+    DfuUploadFile(web_sys::Event),
+    UploadFileCompleted(Vec<u8>),
 }
 
 // dev: wasm-pack build --target web --out-name package --dev
@@ -135,6 +138,20 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
             log::info!("Selected vis group: {:?}", group);
             model.vis_group.set(group);
         }
+        Msg::DfuUploadFile(e) => {
+            let event = e.dyn_into::<JsValue>().unwrap();
+            let target  = js_sys::Reflect::get(&event, &JsValue::from_str("target")).unwrap();
+            let files = js_sys::Reflect::get(&target, &JsValue::from_str("files")).unwrap();
+            let files: web_sys::FileList = files.dyn_into().unwrap();
+            let file = files.item(0).expect_throw("No file selected");
+            log::info!("Upload file name: {}", file.name());
+
+            orders.perform_cmd(upload_file(file));
+        }
+        Msg::UploadFileCompleted(data) => {
+            model.upload_data = Some(data);
+            log::info!("Upload file done, size: 0x{:x} bytes", model.upload_data.as_ref().unwrap().len());
+        }
     }
 }
 
@@ -152,6 +169,13 @@ async fn auto_connect() -> Msg {
     Msg::Connect
 }
 
+async fn upload_file(file: web_sys::File) -> Msg {
+    let file: gloo_file::File = file.into();
+    let bytes = gloo_file::futures::read_as_bytes(&file).await.unwrap();
+    log::info!("Upload file data chunk:\n{:x?}", &bytes[.. if bytes.len() > 0x40 { 0x40 } else { bytes.len() }]);
+
+    Msg::UploadFileCompleted(bytes)
+}
 
 use ellocopo2::owned::{Msg as DevMsg, Value};
 use ellocopo2::AnswerCode;
@@ -343,6 +367,32 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
             ]
         ],
         div![
+            button![
+                "Upload file",
+                ev(Ev::Click, |_| {
+                    let elem: web_sys::HtmlElement = web_sys::window()
+                        .unwrap()
+                        .document()
+                        .unwrap()
+                        .get_element_by_id("upload-file")
+                        .unwrap()
+                        .dyn_into().unwrap();
+                    elem.click();
+                    ()
+                }),
+            ],
+            input![
+                id!["upload-file"],
+                attrs![
+                    At::Type => "file",
+                ],
+                style![
+                    St::Display => "none",
+                ],
+                ev(Ev::Input, |e| Msg::DfuUploadFile(e)),
+            ],
+        ],
+        div![
             C!["container"],
             button![
                 simple_ev(Ev::Click, Msg::VisStart),
@@ -366,7 +416,7 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
             canvas![
                 id!("canvas"),
             ]
-        ]
+        ],
     ]
 }
 

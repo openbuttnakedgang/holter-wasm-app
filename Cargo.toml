@@ -21,7 +21,8 @@ serde = { version = "^1.0.85", features = ['derive'] }
 serde_json = "1.0"
 futures = "^0.3.4"
 gloo-timers = { version = "0.2.0", features = ["futures"] }
-ellocopo2 = { git = "https://github.com/openbuttnakedgang/ellocopo2.git" , features = ["std"]}
+gloo-file = { version = "0.1.0", features = ["futures"] }
+ellocopo2 = { git = "https://github.com/openbuttnakedgang/ellocopo2.git", features = ["std"]}
 holter-support = { git = "https://github.com/openbuttnakedgang/holter-support.git" }
 syn = { version = "1.0", features = ["full", "extra-traits", "derive"] }
 proc-macro2 = "1.0"
@@ -55,6 +56,8 @@ features = [
   'Node',
   'Window',
   'Performance',
+  'FileList',
+  'File',
 ]
 
 
