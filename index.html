@@ -31,113 +31,118 @@
                 Holter wasm app
             </div>
         </div>
-        <div id="app" class="window-body"></div>
-    </div>
+        <script type="module">
+            // https://rustwasm.github.io/docs/wasm-bindgen/examples/without-a-bundler.html
+            import init from './pkg/package.js';
+            init('./pkg/package_bg.wasm');
+        </script>
+        <script>
 
-    <!-- https://rustwasm.github.io/docs/wasm-bindgen/examples/without-a-bundler.html  --->
-    <script type="module">
-        import init from "./pkg/package.js"; init("./pkg/package_bg.wasm");
-    </script>
-    <script>
-        function js_debug(v) {
-            console.log(v);
-        }
+function js_debug(v) {
+    console.log(v);
+}
 
-        class DeviceJs {
-            constructor(device) {
-                console.log(device);
-                this.device_ = device;
-            }
+class DeviceJs {
+    constructor(device) {
+        console.log(device);
+        this.device_ = device;
+    }
 
-            js_connect() {
-                return this.device_
-                    .open()
-                    .then(() => {
-                        if (this.device_.configuration === null) {
-                            return this.device_.selectConfiguration(1);
-                        }
-                    })
-                    .then(() => this.device_.claimInterface(0));
-            }
+    js_connect() {
+        return this.device_.open()
+            .then(() => {
+                if (this.device_.configuration === null) {
+                    return this.device_.selectConfiguration(1);
+                }
+            })
+            .then(() => this.device_.claimInterface(0));
+    }
 
-            js_close() {
-                return this.device_.close();
-            }
+    js_close() {
+        return this.device_.close();
+    }
 
-            js_reset() {
-                return this.device_.reset();
-            }
+    js_reset() {
+        return this.device_.reset();
+    }
 
-            js_send_cmd(data) {
-                const {
-                    endpointNumber,
-                } = this.device_.configuration.interfaces[0].alternate.endpoints[1];
-                return this.device_.transferOut(endpointNumber, data);
-            }
+    js_send_cmd(data) {
+        const { endpointNumber } = this.device_.configuration.interfaces[0].alternate.endpoints[1];
+        return this.device_.transferOut(endpointNumber, data);
+    }
 
-            js_recv_cmd() {
-                const {
-                    endpointNumber,
-                } = this.device_.configuration.interfaces[0].alternate.endpoints[0];
-                return this.device_.transferIn(endpointNumber, 64);
-            }
+    js_recv_cmd() {
+        const { endpointNumber } = this.device_.configuration.interfaces[0].alternate.endpoints[0];
+        return this.device_.transferIn(endpointNumber, 64);
+    }
 
-            js_recv_file(size) {
-                return this.device_.transferIn(0x02, size);
-            }
+    js_send_dfu(bRequest, data, wValue = 0) {
+        return this.device_.controlTransferOut({
+            "requestType": "class",
+            "recipient": "interface",
+            "request": bRequest,
+            "value": wValue,
+            "index": 0
+        }, data);
+    }
 
-            js_recv_vis(size) {
-                return this.device_.transferIn(0x03, size);
-            }
+    js_recv_dfu(bRequest, wLength, wValue=0) {
+        return this.device_.controlTransferIn({
+            "requestType": "class",
+            "recipient": "interface",
+            "request": bRequest,
+            "value": wValue,
+            "index": 0
+        }, wLength);
+    }
 
-            js_descriptor() {
-                return {
-                    productName: this.device_.productName,
-                    serialNumber: this.device_.serialNumber,
-                    manufacturerName: this.device_.manufacturerName,
-                    vid: this.device_.vendorId,
-                    pid: this.device_.productId,
-                };
-            }
-        }
+    js_recv_file(size) {
+        return this.device_.transferIn(0x02, 0x800);
+    }
 
-        function resolveAfter2Seconds(x) {
-            return new Promise((resolve) => {
-                setTimeout(() => {
-                    resolve(x);
-                }, 2000);
-            });
-        }
+    js_recv_vis(size) {
+        return this.device_.transferIn(0x03, size);
+    }
 
-        async function f1() {
-            var x = await resolveAfter2Seconds(10);
-            console.log(x); // 10
-            console.log("test"); // 10
-            return 42;
-        }
+    js_descriptor() {
+        return {
+            productName: this.device_.productName,
+            serialNumber: this.device_.serialNumber,
+            manufacturerName: this.device_.manufacturerName,
+            vid: this.device_.vendorId,
+            pid: this.device_.productId,
+        };
+    }
+}
 
-        function js_requestDevice() {
-            const filters = [{
-                    vendorId: 0x0483,
-                    productId: 0xbaba,
-                }, // Holter
-                {
-                    vendorId: 0x0483,
-                    productId: 0xdeda,
-                }, // Holter DFU loader
-            ];
-            return navigator.usb
-                .requestDevice({
-                    filters: filters,
-                })
-                .then((device) => {
-                    //console.log(device);
-                    ////return {quack: "test"};
-                    //const arr = new Uint8Array(3);
-                    //arr.set([1,2,3]);
-                    //return arr;
-                    return new DeviceJs(device);
-                });
+function resolveAfter2Seconds(x) { 
+    return new Promise(resolve => {
+        setTimeout(() => {
+            resolve(x);
+        }, 2000);
+    });
+}
+
+async function f1() {
+    var x = await resolveAfter2Seconds(10);
+    console.log(x); // 10
+    console.log('test'); // 10
+    return 42;
+}
+
+function js_requestDevice() {
+    const filters = [
+        { 'vendorId': 0x0483, 'productId': 0xBABA }, // Holter
+        { 'vendorId': 0x0483, 'productId': 0xDEDA }, // Holter DFU loader
+    ];
+    return navigator.usb.requestDevice({ 'filters': filters }).then(
+        device => { 
+            //console.log(device);
+            ////return {quack: "test"};
+            //const arr = new Uint8Array(3);
+            //arr.set([1,2,3]);
+            //return arr;
+            return new DeviceJs(device);
         }
     </script>
 </body>
