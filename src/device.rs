@@ -14,6 +14,8 @@ use ellocopo2::ParseMsg;
 use ellocopo2::ParserError;
 use ellocopo2::MAX_MSG_SZ;
 
+use holter_dfu::dfu::defs::*;
+
 use crate::js_debug;
 
 #[wasm_bindgen]
@@ -31,6 +33,10 @@ extern "C" {
     fn js_send_cmd(this: &DeviceJs, data: &[u8]) -> js_sys::Promise;
     #[wasm_bindgen(method)]
     fn js_recv_cmd(this: &DeviceJs) -> js_sys::Promise;
+    #[wasm_bindgen(method)]
+    fn js_recv_dfu(this: &DeviceJs, bRequest: u8, wLength: u16, wValue: u8) -> js_sys::Promise;
+    #[wasm_bindgen(method)]
+    fn js_send_dfu(this: &DeviceJs, bRequest: u8, data: &[u8], wValue: u8) -> js_sys::Promise;
     #[wasm_bindgen(method)]
     fn js_recv_file(this: &DeviceJs, size: u32) -> js_sys::Promise;
     #[wasm_bindgen(method)]
@@ -147,6 +153,24 @@ impl Device {
 
        Ok(r?)
     }
+
+    pub async fn send_recv_dfu(&self) -> Result<(), Error> {
+        if let Type::Holter = self.ty { return Err(Error::DevTypeApi); }
+        if !self.is_connected() { return Err(Error::NotConnected) }
+        
+        let r = {
+            let dev = self.d.borrow();
+            DeviceJs::send_recv_dfu(dev.as_ref().unwrap())
+                .await
+        };
+        
+        if r.is_err() {
+            let mut dev = self.d.borrow_mut();
+            *dev = None;
+        }
+
+       Ok(r?)
+    }
     
     pub async fn recv_file_block(&self, tran_size: u32) -> Result<Vec<u8>,Error> {
         if let Type::Loader = self.ty { return Err(Error::DevTypeApi); }
@@ -219,6 +243,50 @@ impl DeviceJs {
         let f = wasm_bindgen_futures::JsFuture::from(self.js_reset());
         let r = f.await?;
         log!("Device reset: ", r);
+        Ok(())
+    }
+
+    async fn send_recv_dfu(&self) -> Result<(), Error> {
+        
+        let mut buf_out = [0u8;MAX_MSG_SZ];
+        log::info!("DFU");
+
+        // Allocating recv transaction
+        //let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_cmd());
+        
+        // Send
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATE, 1, 0));
+        let msg_ans = future_in.await?;
+        let data_view = js_sys::Reflect::get(&msg_ans, &JsValue::from_str("data")).unwrap();
+        let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
+        let cmd_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
+        log::info!("IN => {:x?}",cmd_buf);
+
+        let header: [u8; 16] = [0xb5, 0x0, 0x9b, 0xb1, 0x0, 0x0, 0x0, 0x0, 0x8, 0x0, 0x0, 0x0, 0x6c, 0x99, 0xd1, 0x32];
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_send_dfu(dfu_request::DFU_DNLOAD, &header, 0));
+        let msg_ans = future_in.await?;
+
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATUS, 1, 0));
+        let msg_ans = future_in.await?;
+
+        let buf: [u8; 8] = [0xa6, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5];
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_send_dfu(dfu_request::DFU_DNLOAD, &buf, 0));
+        let msg_ans = future_in.await?;
+
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATUS, 1, 0));
+        let msg_ans = future_in.await?;
+
+        let buf = [0u8; 64];
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_send_dfu(dfu_request::DFU_DNLOAD, &buf, 0));
+        let msg_ans = future_in.await?;
+
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATUS, 1, 0));
+        let msg_ans = future_in.await?;
+        let data_view = js_sys::Reflect::get(&msg_ans, &JsValue::from_str("data")).unwrap();
+        let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
+        let cmd_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
+        log::info!("IN => {:x?}",cmd_buf);
+
         Ok(())
     }
 

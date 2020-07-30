@@ -161,6 +161,10 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
         Msg::UploadFileCompleted(data) => {
             model.upload_data = Some(data);
             log::info!("Upload file done, size: 0x{:x} bytes", model.upload_data.as_ref().unwrap().len());
+            let device =  Rc::clone(&model.device);
+            orders.perform_cmd( async move {
+            let dev_ans = device.send_recv_dfu().await;
+            });
         }
     }
 }
