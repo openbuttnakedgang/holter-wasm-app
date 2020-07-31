@@ -39,6 +39,7 @@ enum Msg {
     VisUpdate,
     VisSelectedGroup(VisSelectedGroup),
     DfuUploadFile(web_sys::Event),
+    DfuDownloadFile,
     UploadFileCompleted(Vec<u8>),
 }
 
@@ -159,11 +160,18 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
             orders.perform_cmd(upload_file(file));
         }
         Msg::UploadFileCompleted(data) => {
-            model.upload_data = Some(data);
-            log::info!("Upload file done, size: 0x{:x} bytes", model.upload_data.as_ref().unwrap().len());
+            // model.upload_data = Some(data);
+            // log::info!("Upload file done, size: 0x{:x} bytes", model.upload_data.as_ref().unwrap().len());
             let device =  Rc::clone(&model.device);
             orders.perform_cmd( async move {
-            let dev_ans = device.send_recv_dfu().await;
+            let dev_ans = device.send_recv_dfu(data).await;
+            });
+        }
+        Msg::DfuDownloadFile => {
+            let device =  Rc::clone(&model.device);
+            orders.perform_cmd( async move {
+            let dev_ans = device.dfu_upload().await;
+            download::_test_download_file("holter-firmware.bin".to_string(), dev_ans.unwrap()).await.unwrap();
             });
         }
     }
@@ -365,6 +373,21 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
                     St::Display => "none",
                 ],
                 ev(Ev::Input, |e| Msg::DfuUploadFile(e)),
+            ],
+        ],
+        div![
+            C!["row"],
+            button![
+                C!["two columns"],
+                simple_ev(Ev::Click, Msg::DfuDownloadFile),
+                "Download",
+                if model.device.is_connected() {
+                    attrs!{
+                        At::Disabled => true
+                    }
+                } else {
+                    attrs!{}
+                }
             ],
         ],
         div![
