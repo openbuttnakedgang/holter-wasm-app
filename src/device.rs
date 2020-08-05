@@ -298,7 +298,7 @@ impl DeviceJs {
     async fn recv_file(&self) -> Result<Vec<u8>, JsValue> {
         
         // Allocating recv transaction
-        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_file(0x800));
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_file(0x100_000));
 
         // Awaiting recv future
         let msg_ans = future_in.await?;

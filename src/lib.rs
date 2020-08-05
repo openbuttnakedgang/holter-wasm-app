@@ -1,6 +1,6 @@
 
 use std::rc::Rc;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 //#[macro_use]
@@ -15,6 +15,7 @@ mod device;
 mod cfg;
 mod tree;
 mod vis;
+mod download;
 
 #[derive(Default)]
 struct Model {
@@ -115,7 +116,16 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
         }
         Msg::DownloadFile => {
             let device = Rc::clone(&model.device);
-            orders.perform_cmd(download_file(device));
+            orders.perform_cmd( async move {
+                let cancel = false;
+                download::download_file_from_device(
+                    device,
+                    "data.bin",
+                    &false,
+                ).await.unwrap();
+
+                Option::<Msg>::None
+            });
         }
         Msg::VisStart => {
             // FIXME: proper vis stop sequence
@@ -190,45 +200,6 @@ async fn cmd(device: &Rc<device::Device>, msg: DevMsg) -> Result<Value, ()> {
             return Err(());
         }
     }
-}
-
-async fn download_file(device: Rc<device::Device>) -> Option<Msg> {
-
-    log::info!("Performing download");
-
-    let _ = cmd(&device, DevMsg (AnswerCode::OK_WRITE, String::from("/io/file/pos"), Value::U32(0)))
-        .await
-        .unwrap();
-
-    let r = cmd(&device, DevMsg (AnswerCode::OK_READ, String::from("/io/file/len"), Value::UNIT(())))
-        .await
-        .unwrap();
-
-    let block_cnt = if let Value::U32(_block_cnt) = r {
-        0x10//block_cnt
-    } else { unimplemented!() };
-
-    let _ = cmd(&device, DevMsg (AnswerCode::OK_WRITE, String::from("/io/file/len"), Value::U32(block_cnt)))
-        .await
-        .unwrap();
-    
-    let _ = cmd(&device, DevMsg (AnswerCode::OK_WRITE, String::from("/io/file/start"), Value::UNIT(())))
-        .await
-        .unwrap();
-    
-    for _ in 0 .. block_cnt {
-        let buf = device.recv_file_block().await.unwrap();
-        log::info!("recv_file_block res {:?}", buf.len());
-        log::info!("{:x?}", &buf[.. delta::defs::HEADER_SZ]);
-        let mut parser = delta::block::parse::BlockParser::new();
-        let r = parser.try_open_block(&buf[..]);
-        log::info!("try_open_block res: {:?}", r);
-        log::info!("Blk header: {:#?}", parser.header());
-    }
-
-    log::info!("End::Performing download");
-
-    None
 }
 
 async fn vis_start(device: Rc<device::Device>, vis: Rc<AtomicBool>) -> Option<Msg> {
@@ -350,13 +321,13 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
             button![
                 simple_ev(Ev::Click, Msg::DownloadFile),
                 "Download file",
-                if !model.device.is_connected() {
-                    attrs!{
-                        At::Disabled => true
-                    }
-                } else {
-                    attrs!{}
-                }
+                // if !model.device.is_connected() {
+                //     attrs!{
+                //         At::Disabled => true
+                //     }
+                // } else {
+                //     attrs!{}
+                // }
             ],
             progress![
                 C!["ten columns"],
