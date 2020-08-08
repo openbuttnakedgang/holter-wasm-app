@@ -1,4 +1,4 @@
-name: Main
+name: CI/CD
 
 on: [push, pull_request]
 
@@ -12,9 +12,9 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-        #with:
-        #    repository: ButtNaked/delta.git
-        #    token: ${{ secrets.EXT_GHA }}
+      - uses: webfactory/ssh-agent@v0.4.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_GHA_KEY }}
 
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
@@ -30,11 +30,13 @@ jobs:
         #  run: cargo make verify_only
 
       - name: Build
+        run: cargo make build_release
+
+      - name: Prepare to deploy
         run: |
-          cargo make build_release
           mkdir build
           mv -v index.html public pkg ./build
-          ls -a ./build/pkg
+          ls -alt ./build/pkg
 
       - name: Deploy 🚀
         uses: JamesIves/github-pages-deploy-action@releases/v3
