@@ -181,7 +181,7 @@ pub fn build_view_leaf(trees: &Vec<Tree>) -> HashMap<String, Rc<RefCell<TLeaf>>>
     map
 }
 
-fn defaults_inputs_view_leaf(_leafs: &mut HashMap<String, TLeaf>) {
+fn _defaults_inputs_view_leaf(_leafs: &mut HashMap<String, TLeaf>) {
     let _defs: HashMap<String, String> = HashMap::new();
     // TODO:
     todo!()

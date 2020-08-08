@@ -352,9 +352,9 @@ export function writeFile(filename, content) {
 // }
 
 export class FileWriter {
-    constructor(filename) {
+    constructor(filename, size) {
         const fileStream = streamSaver.createWriteStream(filename, {
-            size: undefined, // (optional) Will show progress
+            size, // (optional) Will show progress
             writableStrategy: undefined, // (optional)
             readableStrategy: undefined, // (optional)
         });

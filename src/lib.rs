@@ -121,7 +121,7 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
                 download::download_file_from_device(
                     device,
                     "data.bin",
-                    &false,
+                    &cancel,
                 ).await.unwrap();
 
                 Option::<Msg>::None

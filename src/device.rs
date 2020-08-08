@@ -32,7 +32,7 @@ extern "C" {
     #[wasm_bindgen(method)]
     fn js_recv_cmd(this: &DeviceJs) -> js_sys::Promise;
     #[wasm_bindgen(method)]
-    fn js_recv_file(this: &DeviceJs, size: usize) -> js_sys::Promise;
+    fn js_recv_file(this: &DeviceJs, size: u32) -> js_sys::Promise;
     #[wasm_bindgen(method)]
     fn js_recv_vis(this: &DeviceJs, size: usize) -> js_sys::Promise;
 
@@ -52,6 +52,7 @@ pub enum Error {
     DomExp(DomException),
     RawJs(JsValue),
     DevTypeApi,
+    EpStall,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -109,7 +110,7 @@ impl Device {
         }
     }
 
-    pub fn dev_type(&self) -> Option<Type> {
+    pub fn _dev_type(&self) -> Option<Type> {
         if self.d.borrow().is_some() {
             Some(self.ty)
         } else {
@@ -147,13 +148,13 @@ impl Device {
        Ok(r?)
     }
     
-    pub async fn recv_file_block(&self) -> Result<Vec<u8>,Error> {
+    pub async fn recv_file_block(&self, tran_size: u32) -> Result<Vec<u8>,Error> {
         if let Type::Loader = self.ty { return Err(Error::DevTypeApi); }
         if !self.is_connected() { return Err(Error::NotConnected)}
 
         let r = { 
             let dev = self.d.borrow();
-            DeviceJs::recv_file(dev.as_ref().unwrap()).await
+            DeviceJs::recv_file(dev.as_ref().unwrap(), tran_size).await
         };
 
         if r.is_err() {
@@ -208,7 +209,7 @@ impl DeviceJs {
         Ok(desc)
     }
 
-    async fn close(&self) -> Result<(),JsValue> {
+    async fn _close(&self) -> Result<(),JsValue> {
         let f = wasm_bindgen_futures::JsFuture::from(self.js_close());
         let _ = f.await?;
         Ok(())
@@ -295,23 +296,32 @@ impl DeviceJs {
         )
     }
 
-    async fn recv_file(&self) -> Result<Vec<u8>, JsValue> {
+    async fn recv_file(&self, tran_size: u32) -> Result<Vec<u8>, Error> {
         
         // Allocating recv transaction
-        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_file(0x100_000));
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_file(tran_size));
 
         // Awaiting recv future
-        let msg_ans = future_in.await?;
-        //js_debug(&msg_ans);
-        let data_view = js_sys::Reflect::get(&msg_ans, &JsValue::from_str("data")).unwrap();
-        //js_debug(&data_view);
-        let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
-        //js_debug(&array_buf);
+        let trans_result = future_in.await?;
+        // Check transfer status
+        let status = js_sys::Reflect::get(&trans_result, &JsValue::from_str("status")).unwrap();
 
-        let buf = js_sys::Uint8Array::new(&array_buf).to_vec();
-        //log::info!("{:x?}",buf);
+        match status.as_string().unwrap().as_str() {
+            "stall" => Err(Error::EpStall),
+            "ok" => {
+                //js_debug(&msg_ans);
+                let data_view = js_sys::Reflect::get(&trans_result, &JsValue::from_str("data")).unwrap();
+                //js_debug(&data_view);
+                let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
+                //js_debug(&array_buf);
+
+                let buf = js_sys::Uint8Array::new(&array_buf).to_vec();
+                //log::info!("{:x?}",buf);
     
-        Ok(buf)
+                 Ok(buf)
+            }
+            s => panic!("File transaction unknow status: {}", s),
+        }
     }
 
     async fn recv_vis(&self, buf: &mut [u8]) -> Result<usize, JsValue> {

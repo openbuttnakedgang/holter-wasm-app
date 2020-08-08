@@ -19,7 +19,7 @@ use holter_support::error::Error as HolterError;
 mod parse;
 
 const ENTER_KEY: u32 = 13;
-const ESC_KEY: u32 = 27;
+const _ESC_KEY: u32 = 27;
 
 #[derive(Default)]
 pub struct Model {
