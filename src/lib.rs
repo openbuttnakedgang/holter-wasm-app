@@ -38,8 +38,8 @@ enum Msg {
     VisStart,
     VisUpdate,
     VisSelectedGroup(VisSelectedGroup),
-    DfuUploadFile(web_sys::Event),
-    DfuDownloadFile,
+    DfuUploadFirmware(web_sys::Event),
+    DfuDownloadFirmware,
     UploadFileCompleted(Vec<u8>),
 }
 
@@ -149,7 +149,7 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
             log::info!("Selected vis group: {:?}", group);
             model.vis_group.set(group);
         }
-        Msg::DfuUploadFile(e) => {
+        Msg::DfuUploadFirmware(e) => {
             let event = e.dyn_into::<JsValue>().unwrap();
             let target  = js_sys::Reflect::get(&event, &JsValue::from_str("target")).unwrap();
             let files = js_sys::Reflect::get(&target, &JsValue::from_str("files")).unwrap();
@@ -164,14 +164,14 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
             // log::info!("Upload file done, size: 0x{:x} bytes", model.upload_data.as_ref().unwrap().len());
             let device =  Rc::clone(&model.device);
             orders.perform_cmd( async move {
-            let dev_ans = device.send_recv_dfu(data).await;
+            let _dev_ans = device.send_recv_dfu(data).await;
             });
         }
-        Msg::DfuDownloadFile => {
+        Msg::DfuDownloadFirmware => {
             let device =  Rc::clone(&model.device);
             orders.perform_cmd( async move {
             let dev_ans = device.dfu_upload().await;
-            download::_test_download_file("holter-firmware.bin".to_string(), dev_ans.unwrap()).await.unwrap();
+            download::download_file("holter-firmware.bin".to_string(), dev_ans.unwrap()).await.unwrap();
             });
         }
     }
@@ -363,6 +363,17 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
                     elem.click();
                     ()
                 }),
+                if model.device.is_dfu_mode() {
+                    attrs!{};
+                    style![]
+                } else {
+                    attrs!{
+                        At::Disabled => true
+                    };
+                    style![
+                        St::Display => "none",
+                        ]
+                }
             ],
             input![
                 id!["upload-file"],
@@ -372,21 +383,25 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
                 style![
                     St::Display => "none",
                 ],
-                ev(Ev::Input, |e| Msg::DfuUploadFile(e)),
+                ev(Ev::Input, |e| Msg::DfuUploadFirmware(e)),
             ],
         ],
         div![
             C!["row"],
             button![
                 C!["two columns"],
-                simple_ev(Ev::Click, Msg::DfuDownloadFile),
+                simple_ev(Ev::Click, Msg::DfuDownloadFirmware),
                 "Download",
-                if model.device.is_connected() {
+                if model.device.is_dfu_mode() {
+                    attrs!{};
+                    style![]
+                } else {
                     attrs!{
                         At::Disabled => true
-                    }
-                } else {
-                    attrs!{}
+                    };
+                    style![
+                        St::Display => "none",
+                        ]
                 }
             ],
         ],

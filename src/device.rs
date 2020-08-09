@@ -128,6 +128,11 @@ impl Device {
         self.d.borrow().is_some()
     }
 
+    pub fn is_dfu_mode(&self) -> bool {
+        if let Type::Loader = self.ty { return true }
+        false
+    }
+
     pub fn is_reconnecting(&self, dev: &Self) -> bool {
         if self.desc == dev.desc {
             true
@@ -296,6 +301,7 @@ impl DeviceJs {
             let _msg_ans = future_in.await?;
             j += 64;
             i += 1;
+            log::info!("packet size: 64");
         }
         let buf = [0u8; 0];
         let future_in = wasm_bindgen_futures::JsFuture::from(self.js_send_dfu(dfu_request::DFU_DNLOAD, &buf, i));
@@ -314,7 +320,7 @@ impl DeviceJs {
     async fn dfu_upload(&self) -> Result<Vec<u8>, Error> {
         log::info!("DFU");
 
-        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATE, 1, 0));
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATUS, 6, 0));
         let msg_ans = future_in.await?;
         let data_view = js_sys::Reflect::get(&msg_ans, &JsValue::from_str("data")).unwrap();
         let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
@@ -326,10 +332,11 @@ impl DeviceJs {
 
         while state != 2 {
             let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_UPLOAD, 64, 0));
-            let _msg_ans = future_in.await?;
+            let msg_ans = future_in.await?;
             let data_view = js_sys::Reflect::get(&msg_ans, &JsValue::from_str("data")).unwrap();
             let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
             let mut cmd_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
+            log::info!("cmd buf len: {}", &cmd_buf.len());
             data.append(&mut cmd_buf);
 
             let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATE, 1, 0));
@@ -339,6 +346,7 @@ impl DeviceJs {
             let cmd_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
             state = cmd_buf[0];
         }
+        log::info!("dta len: {}", &data.len());
 
         Ok(data)
     }
