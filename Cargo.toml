@@ -29,7 +29,7 @@ proc-macro2 = "1.0"
 
 [dependencies.delta ]
 version = "0.1"
-git = "ssh://git@github.com:/ButtNaked/delta.git"
+git = "ssh://git@github.com:/IncartDev/delta.git"
 features = ["std"]
 
 [dependencies.holter-dfu]
