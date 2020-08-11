@@ -30,10 +30,13 @@ jobs:
         #  run: cargo make verify_only
 
       - name: Build
+        run: cargo make build_release
+
+      - name: Prepare to deploy
         run: |
-          cargo make build_release
           mkdir build
           mv -v index.html public pkg ./build
+          ls -alt ./build/pkg
 
       - name: Deploy 🚀
         uses: JamesIves/github-pages-deploy-action@releases/v3
