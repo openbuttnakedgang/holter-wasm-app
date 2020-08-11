@@ -36,7 +36,7 @@ pub async fn download_file(filename: String, content: Vec<u8>) -> Result<(),JsVa
     // let result = wasm_bindgen_futures::JsFuture::from(promise).await?;
 
     let fw = FileWriter::new(&filename, None);
-    let promise = fw.write(&content);
+    let _promise = fw.write(&content);
 
     fw.close();
 
