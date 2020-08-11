@@ -326,26 +326,45 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
         ],
         div![
             C!["container"],
-            tree::view(&model.treee).map_msg(Msg::Tree)
+            if !model.device.is_dfu_mode() {
+                tree::view(&model.treee).map_msg(Msg::Tree)
+            }
+            else {
+                div![]
+            }
         ],
         div![
             C!["container"],
             button![
                 simple_ev(Ev::Click, Msg::DownloadFile),
                 "Download file",
-                // if !model.device.is_connected() {
-                //     attrs!{
-                //         At::Disabled => true
-                //     }
-                // } else {
-                //     attrs!{}
-                // }
+                if model.device.is_dfu_mode() {
+                    attrs!{
+                        At::Disabled => true
+                    };
+                    style![
+                        St::Display => "none",
+                        ]
+                } else {  
+                    attrs!{};
+                    style![]
+                }
             ],
             progress![
                 C!["ten columns"],
-                attrs!{
-                    At::Max => 100,
-                    At::Value => 50,
+                if model.device.is_dfu_mode() {
+                    attrs!{
+                        At::Disabled => true
+                    };
+                    style![
+                        St::Display => "none",
+                        ]
+                } else { 
+                    attrs!{
+                        At::Max => 100,
+                        At::Value => 50,
+                    };
+                    style![]
                 }
             ]
         ],
@@ -410,12 +429,16 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
             button![
                 simple_ev(Ev::Click, Msg::VisStart),
                 "Vis",
-                if !model.device.is_connected() {
+                if !model.device.is_connected() || model.device.is_dfu_mode() {
                     attrs!{
                         At::Disabled => true
-                    }
+                    };
+                    style![
+                        St::Display => "none",
+                        ]
                 } else {
-                    attrs!{}
+                    attrs!{};
+                    style![]
                 }
             ],
             select![
@@ -423,6 +446,17 @@ fn view(model: &Model) -> Vec<Node<Msg>> {
                 option![ "ECG" ],
                 option![ "REO" ],
                 option![ "ACC_IN" ],
+                if !model.device.is_connected() || model.device.is_dfu_mode() {
+                    attrs!{
+                        At::Disabled => true
+                    };
+                    style![
+                        St::Display => "none",
+                        ]
+                } else {
+                    attrs!{};
+                    style![]
+                }
             ]
         ],
         div![
