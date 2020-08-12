@@ -35,8 +35,11 @@ jobs:
       - name: Prepare to deploy
         run: |
           mkdir build
+          rm pkg/.gitignore
           mv -v index.html public pkg ./build
-          ls -alt ./build/pkg
+          mv fix/package_add_snippets.json ./build/package.json
+          ls ./build
+
       - name: Deploy 🚀
         uses: JamesIves/github-pages-deploy-action@releases/v3
         with:
