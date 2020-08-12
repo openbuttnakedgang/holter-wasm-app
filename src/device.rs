@@ -14,6 +14,8 @@ use ellocopo2::ParseMsg;
 use ellocopo2::ParserError;
 use ellocopo2::MAX_MSG_SZ;
 
+use holter_dfu::dfu::defs::*;
+
 use crate::js_debug;
 
 #[wasm_bindgen]
@@ -31,6 +33,10 @@ extern "C" {
     fn js_send_cmd(this: &DeviceJs, data: &[u8]) -> js_sys::Promise;
     #[wasm_bindgen(method)]
     fn js_recv_cmd(this: &DeviceJs) -> js_sys::Promise;
+    #[wasm_bindgen(method)]
+    fn js_recv_dfu(this: &DeviceJs, bRequest: u8, wLength: u16, wValue: u32) -> js_sys::Promise;
+    #[wasm_bindgen(method)]
+    fn js_send_dfu(this: &DeviceJs, bRequest: u8, data: &[u8], wValue: u32) -> js_sys::Promise;
     #[wasm_bindgen(method)]
     fn js_recv_file(this: &DeviceJs, size: u32) -> js_sys::Promise;
     #[wasm_bindgen(method)]
@@ -122,6 +128,11 @@ impl Device {
         self.d.borrow().is_some()
     }
 
+    pub fn is_dfu_mode(&self) -> bool {
+        if let Type::Loader = self.ty { return true }
+        false
+    }
+
     pub fn is_reconnecting(&self, dev: &Self) -> bool {
         if self.desc == dev.desc {
             true
@@ -137,6 +148,42 @@ impl Device {
         let r = {
             let dev = self.d.borrow();
             DeviceJs::send_recv_cmd(dev.as_ref().unwrap(), msg)
+                .await
+        };
+        
+        if r.is_err() {
+            let mut dev = self.d.borrow_mut();
+            *dev = None;
+        }
+
+       Ok(r?)
+    }
+
+    pub async fn send_recv_dfu(&self, data: Vec<u8>) -> Result<(), Error> {
+        if let Type::Holter = self.ty { return Err(Error::DevTypeApi); }
+        if !self.is_connected() { return Err(Error::NotConnected) }
+        
+        let r = {
+            let dev = self.d.borrow();
+            DeviceJs::send_recv_dfu(dev.as_ref().unwrap(), data)
+                .await
+        };
+        
+        if r.is_err() {
+            let mut dev = self.d.borrow_mut();
+            *dev = None;
+        }
+
+       Ok(r?)
+    }
+
+    pub async fn dfu_upload(&self) -> Result<Vec<u8>, Error> {
+        if let Type::Holter = self.ty { return Err(Error::DevTypeApi); }
+        if !self.is_connected() { return Err(Error::NotConnected) }
+        
+        let r = {
+            let dev = self.d.borrow();
+            DeviceJs::dfu_upload(dev.as_ref().unwrap())
                 .await
         };
         
@@ -220,6 +267,88 @@ impl DeviceJs {
         let r = f.await?;
         log!("Device reset: ", r);
         Ok(())
+    }
+
+    async fn send_recv_dfu(&self, data: Vec<u8>) -> Result<(), Error> {
+        
+        log::info!("DFU");
+
+        // Allocating recv transaction
+        //let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_cmd());
+        
+        // Send
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATE, 1, 0));
+        let msg_ans = future_in.await?;
+        let data_view = js_sys::Reflect::get(&msg_ans, &JsValue::from_str("data")).unwrap();
+        let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
+        let cmd_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
+        log::info!("IN => {:x?}",cmd_buf);
+        log::info!("data len{:?}", &data.len());
+
+        let mut j: usize = 0;
+        let mut i = 0;
+        while j < data.len() {
+            if data.len() > j + 64 {
+                let future_in = wasm_bindgen_futures::JsFuture::from(self.js_send_dfu(dfu_request::DFU_DNLOAD, &data[j..j+64], i));
+                let _msg_ans = future_in.await?;
+            }
+            else {
+                let future_in = wasm_bindgen_futures::JsFuture::from(self.js_send_dfu(dfu_request::DFU_DNLOAD, &data[j..data.len()], i));
+                let _msg_ans = future_in.await?;
+            }
+
+            let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATUS, 6, 0));
+            let _msg_ans = future_in.await?;
+            j += 64;
+            i += 1;
+            log::info!("packet size: 64");
+        }
+        let buf = [0u8; 0];
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_send_dfu(dfu_request::DFU_DNLOAD, &buf, i));
+        let _msg_ans = future_in.await?;
+
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATUS, 6, 0));
+        let msg_ans = future_in.await?;
+        let data_view = js_sys::Reflect::get(&msg_ans, &JsValue::from_str("data")).unwrap();
+        let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
+        let cmd_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
+        log::info!("output {:?}",cmd_buf);
+
+        Ok(())
+    }
+
+    async fn dfu_upload(&self) -> Result<Vec<u8>, Error> {
+        log::info!("DFU");
+
+        let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATUS, 6, 0));
+        let msg_ans = future_in.await?;
+        let data_view = js_sys::Reflect::get(&msg_ans, &JsValue::from_str("data")).unwrap();
+        let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
+        let cmd_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
+        log::info!("IN => {:x?}",cmd_buf);
+
+        let mut state = 0;
+        let mut data: Vec<u8> = Vec::new();
+
+        while state != 2 {
+            let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_UPLOAD, 64, 0));
+            let msg_ans = future_in.await?;
+            let data_view = js_sys::Reflect::get(&msg_ans, &JsValue::from_str("data")).unwrap();
+            let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
+            let mut cmd_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
+            log::info!("cmd buf len: {}", &cmd_buf.len());
+            data.append(&mut cmd_buf);
+
+            let future_in = wasm_bindgen_futures::JsFuture::from(self.js_recv_dfu(dfu_request::DFU_GETSTATE, 1, 0));
+            let msg_ans = future_in.await?;
+            let data_view = js_sys::Reflect::get(&msg_ans, &JsValue::from_str("data")).unwrap();
+            let array_buf = js_sys::Reflect::get(&data_view, &JsValue::from_str("buffer")).unwrap();
+            let cmd_buf = js_sys::Uint8Array::new(&array_buf).to_vec();
+            state = cmd_buf[0];
+        }
+        log::info!("dta len: {}", &data.len());
+
+        Ok(data)
     }
 
     async fn send_recv_cmd(&self, msg: DevMsg) -> Result<DevMsg, JsValue> {

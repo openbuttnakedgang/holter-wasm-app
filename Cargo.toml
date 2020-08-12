@@ -32,6 +32,9 @@ version = "0.1"
 git = "ssh://git@github.com:/IncartDev/delta.git"
 features = ["std"]
 
+[dependencies.holter-dfu]
+git = "ssh://git@github.com:/IncartDev/holter-dfu.git"
+
 [dependencies.wasm-bindgen]
 version = "^0.2.50"
 features = ["serde-serialize"]

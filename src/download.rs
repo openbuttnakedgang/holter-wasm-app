@@ -30,20 +30,13 @@ extern "C" {
 
 }
 
-pub async fn _test_download_file(_filename: String, _content: Vec<u8>) -> Result<(),JsValue> {
+pub async fn download_file(filename: String, content: Vec<u8>) -> Result<(),JsValue> {
 
     // let promise: js_sys::Promise = writeFile(filename, content);
     // let result = wasm_bindgen_futures::JsFuture::from(promise).await?;
 
-    let fw = FileWriter::new("tt.bin", None);
-    let promise = fw.write(&[0xA5;4]);
-    let _result = wasm_bindgen_futures::JsFuture::from(promise).await?;
-
-    let promise = fw.write(&[0xb4;2]);
-    let _result = wasm_bindgen_futures::JsFuture::from(promise).await?;
-
-    let promise = fw.write(&[0xc7;4]);
-    let _result = wasm_bindgen_futures::JsFuture::from(promise).await?;
+    let fw = FileWriter::new(&filename, None);
+    let _promise = fw.write(&content);
 
     fw.close();
 

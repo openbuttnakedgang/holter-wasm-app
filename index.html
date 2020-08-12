@@ -82,6 +82,26 @@
                 return this.device_.transferIn(endpointNumber, 64);
             }
 
+            js_send_dfu(bRequest, data, wValue = 0) {
+                return this.device_.controlTransferOut({
+                    "requestType": "class",
+                    "recipient": "interface",
+                    "request": bRequest,
+                    "value": wValue,
+                    "index": 0
+                }, data);
+            }
+
+            js_recv_dfu(bRequest, wLength, wValue=0) {
+                return this.device_.controlTransferIn({
+                    "requestType": "class",
+                    "recipient": "interface",
+                    "request": bRequest,
+                    "value": wValue,
+                    "index": 0
+                }, wLength);
+            }
+
             js_recv_file(size) {
                 return this.device_.transferIn(0x02, size);
             }

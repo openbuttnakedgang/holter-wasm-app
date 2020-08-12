@@ -37,7 +37,6 @@ jobs:
           mkdir build
           mv -v index.html public pkg ./build
           ls -alt ./build/pkg
-
       - name: Deploy 🚀
         uses: JamesIves/github-pages-deploy-action@releases/v3
         with:
